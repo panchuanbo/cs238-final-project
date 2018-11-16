@@ -22,6 +22,8 @@ class Agent:
         self.ctr = 0
         self.restart_game = False
         self.verbose = verbose
+        self.show_board = False
+        self.last_move = -2
 
     def launch(self):
         """
@@ -42,15 +44,19 @@ class Agent:
         print '[Agent] API Enabled'
 
     def __controller_listener(self):
-        if not self.placed_move:
+        random_move = np.random.choice([-1, 0, 6, 7])
+        if not self.placed_move:# and (random_move >= 0 or self.restart_game > 0):
             if self.restart_game > 0:
                 self.api.writeGamepad(0, 3, True)
                 self.restart_game -= 1
             else:
-                self.api.writeGamepad(0, 0, True)
-
-        self.placed_move = not self.placed_move
-        self.ctr += 1
+                if random_move >= 0:
+                    self.api.writeGamepad(0, random_move, True)
+            self.placed_move = True
+            self.show_board = True
+            self.last_move = random_move
+        else:
+            self.placed_move = False
 
     def __frame_render_finished(self):
         """
@@ -61,13 +67,13 @@ class Agent:
         (x, y) = (self.api.peekCPU(0x0040), self.api.peekCPU(0x0041))
         piece_id = self.api.peekCPU(0x0042)
 
-        piece = kOrientations[piece_id]
-        r, c = np.argwhere(piece == 2)[0]
-
         # Restart the game
         if piece_id == 19:
             self.restart_game = 1
             return
+
+        piece = kOrientations[piece_id]
+        r, c = np.argwhere(piece == 2)[0]
 
         # Generates the board
         for addr in range(0x0400, 0x04c7 + 1):
@@ -80,15 +86,18 @@ class Agent:
                 if rr + y >= 0 and piece[rr + r, cc + c] > 0:
                     self.grid[rr + y, cc + x] = 2
 
-        if self.verbose:
+        if self.verbose or self.show_board:
             self.__print_board()
+            self.last_move = -2
+            self.show_board = False
 
     def __print_board(self):
         """
         Prints the board (if verbose mode is on)
         """
 
-        print 'Render...'
+        reward = self.__count_total() + self.__get_score()
+        print 'Render... (a: %s | r: %s)' % (self.last_move, reward)
         for i in range(self.grid.shape[0]):
             for j in range(self.grid.shape[1]):
                 val = str(int(self.grid[i,j]))
@@ -98,12 +107,29 @@ class Agent:
                     print val,
             print ''
 
+    def __count_total(self):
+        n_T = self.api.peekCPU16(0x03f0)
+        n_J = self.api.peekCPU16(0x03f2)
+        n_Z = self.api.peekCPU16(0x03f4)
+        n_O = self.api.peekCPU16(0x03f6)
+        n_S = self.api.peekCPU16(0x03f8)
+        n_L = self.api.peekCPU16(0x03fa)
+        n_I = self.api.peekCPU16(0x03fc)
+
+        return n_T + n_J + n_Z + n_O + n_S + n_L + n_I
+
+    def __get_score(self):
+        low = self.api.peekCPU(0x0073)
+        mid = self.api.peekCPU(0x0074)
+        hig = self.api.peekCPU(0x0075)
+
+        return hig * 10000 + mid * 100 + low
 
 def main(args):
     nintaco.initRemoteAPI("localhost", 9999)
     api = nintaco.getAPI()
 
-    agent = Agent(api)
+    agent = Agent(api, verbose=False)
     agent.launch()
 
 if __name__ == "__main__":
