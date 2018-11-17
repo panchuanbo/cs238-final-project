@@ -12,7 +12,8 @@ import tensorflow as tf
 
 from nintaco import nintaco
 
-from train import ReplayBuffer, DQN
+from dqn import DQN
+from replay_buffer import ReplayBuffer
 from util import bcolors, kOrientations
 
 class Agent:

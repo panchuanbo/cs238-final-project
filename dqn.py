@@ -1,48 +1,19 @@
-####################################################################
-# The actual network(s) and Replay Buffer is located in this file. #
-# It will be used during the training and prediction process.      #
-####################################################################
-
-import random
+##################################################################
+# This file contains the Deep-Q Network. It inherits from Model. #
+##################################################################
 
 import numpy as np
 import tensorflow as tf
 
-class ReplayBuffer(object):
-    def __init__(self, max_size=1000):
-        self.max_size = 1000
-        self.buff = []
+from model import Model
 
-    def add(self, s, a, r, sp):
-        if len(self.buff) >= self.max_size:
-            self.buff.pop(0)
-
-        self.buff.append((s, a, r, sp))
-
-    def sample(self, batch_sz=100):
-        return random.sample(self.buff, min(batch_sz, len(self.buff)))
-
-    def get_last_state(self):
-        return self.buff[-1][-1]
-
-    def size(self):
-        return len(self.buff)
-
-class DQN(object):
+class DQN(Model):
     def __init__(self, sess, save_path, gamma=0.995, n_actions=4, lr=0.001, restore_path=None):
-        self.sess = sess
         self.gamma = gamma
         self.n_actions = n_actions
-        self.lr = lr
-        self.build_network()
-        self.saver = tf.train.Saver()
-        self.save_path = save_path
         self.iteration = 0
 
-        if restore_path is not None:
-            saver.restore(sess, restore_path)
-        else:
-            tf.initialize_all_variables().run()
+        super(DQN, self).__init__(sess, save_path, lr=lr, restore_path=restore_path)
 
     # Build Network
     def build_network(self):
