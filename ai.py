@@ -8,22 +8,34 @@
 
 import sys
 import numpy as np
+import tensorflow as tf
 
 from nintaco import nintaco
 
+from train import ReplayBuffer, DQN
 from util import bcolors, kOrientations
 
 class Agent:
-    def __init__(self, api, verbose=False):
+    def __init__(self, api, sess, verbose=False, train=False):
         self.api = api
+        self.verbose = verbose
+        self.train = train
+        self.replay_buffer = ReplayBuffer()
+        self.network = DQN(sess)
+
         self.launched = False
         self.grid = np.zeros((20, 10))
         self.placed_move = False
         self.ctr = 0
-        self.restart_game = False
-        self.verbose = verbose
+        self.restart_game = 1
+        self.game_restarted = True
         self.show_board = False
         self.last_move = -2
+        self.start_state = np.zeros((20, 10, 1))
+        self.possible_moves = [-1, 0, 6, 7]
+        self.training_begun = False
+        self.epsilon = 1
+        self.decay = 0.997
 
     def launch(self):
         """
@@ -44,17 +56,23 @@ class Agent:
         print '[Agent] API Enabled'
 
     def __controller_listener(self):
-        random_move = np.random.choice([-1, 0, 6, 7])
         if not self.placed_move:# and (random_move >= 0 or self.restart_game > 0):
+            move = None
+            if np.random.random() < self.epsilon or not self.training_begun:
+                move = np.random.choice(self.possible_moves)
+            else:
+                pred = self.network.predict(self.grid.reshape((20, 10, 1)))[0]
+                move = self.possible_moves[pred]
+
             if self.restart_game > 0:
                 self.api.writeGamepad(0, 3, True)
                 self.restart_game -= 1
             else:
-                if random_move >= 0:
-                    self.api.writeGamepad(0, random_move, True)
+                if move >= 0:
+                    self.api.writeGamepad(0, move, True)
             self.placed_move = True
             self.show_board = True
-            self.last_move = random_move
+            self.last_move = move
         else:
             self.placed_move = False
 
@@ -69,6 +87,7 @@ class Agent:
 
         # Restart the game
         if piece_id == 19:
+            self.game_restarted = True
             self.restart_game = 1
             return
 
@@ -86,10 +105,36 @@ class Agent:
                 if rr + y >= 0 and piece[rr + r, cc + c] > 0:
                     self.grid[rr + y, cc + x] = 2
 
+
+        if self.last_move != -2:
+            s = None
+            if self.game_restarted:
+                s = np.array(self.start_state)
+                self.game_restarted = False
+            else:
+                s = self.replay_buffer.get_last_state()
+            a = self.possible_moves.index(self.last_move)
+            r = self.__count_total() + self.__get_score()
+            sp = self.grid.reshape((20, 10, 1))
+
+            self.replay_buffer.add(s, a, r, sp)
+
+            if self.train and self.replay_buffer.size() > 200:
+                batch = self.replay_buffer.sample()
+                self.network.train(batch)
+                self.training_begun = True
+
+                self.epsilon *= self.decay
+
+            self.__print_board()
+
+            self.last_move = -2
+        """
         if self.verbose or self.show_board:
             self.__print_board()
             self.last_move = -2
             self.show_board = False
+        """
 
     def __print_board(self):
         """
@@ -129,8 +174,9 @@ def main(args):
     nintaco.initRemoteAPI("localhost", 9999)
     api = nintaco.getAPI()
 
-    agent = Agent(api, verbose=False)
-    agent.launch()
+    with tf.Session() as sess:
+        agent = Agent(api, sess, verbose=False, train=True)
+        agent.launch()
 
 if __name__ == "__main__":
     main(sys.argv)
