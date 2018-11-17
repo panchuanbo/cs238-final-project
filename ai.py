@@ -16,12 +16,12 @@ from train import ReplayBuffer, DQN
 from util import bcolors, kOrientations
 
 class Agent:
-    def __init__(self, api, sess, verbose=False, train=False):
+    def __init__(self, api, sess, save_path, restore_path=None, verbose=False, train=False):
         self.api = api
         self.verbose = verbose
         self.train = train
         self.replay_buffer = ReplayBuffer()
-        self.network = DQN(sess)
+        self.network = DQN(sess, save_path, restore_path=restore_path)
 
         self.launched = False
         self.grid = np.zeros((20, 10))
@@ -35,7 +35,7 @@ class Agent:
         self.possible_moves = [-1, 0, 6, 7]
         self.training_begun = False
         self.epsilon = 1
-        self.decay = 0.997
+        self.decay = 0.9975
 
     def launch(self):
         """
@@ -84,11 +84,16 @@ class Agent:
 
         (x, y) = (self.api.peekCPU(0x0040), self.api.peekCPU(0x0041))
         piece_id = self.api.peekCPU(0x0042)
+        game_state = self.api.peekCPU(0x0048)
 
         # Restart the game
-        if piece_id == 19:
+        if piece_id == 19 and (game_state == 10 or game_state == 0):
             self.game_restarted = True
             self.restart_game = 1
+            return
+
+        # Probably a line clear... Skip
+        if piece_id == 19 and game_state != 1:
             return
 
         piece = kOrientations[piece_id]
@@ -175,7 +180,7 @@ def main(args):
     api = nintaco.getAPI()
 
     with tf.Session() as sess:
-        agent = Agent(api, sess, verbose=False, train=True)
+        agent = Agent(api, sess, save_path='checkpoints/model.ckpt', verbose=False, train=True)
         agent.launch()
 
 if __name__ == "__main__":

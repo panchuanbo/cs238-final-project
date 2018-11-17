@@ -29,14 +29,20 @@ class ReplayBuffer(object):
         return len(self.buff)
 
 class DQN(object):
-    def __init__(self, sess, gamma=0.99, n_actions=4, lr=0.001):
+    def __init__(self, sess, save_path, gamma=0.995, n_actions=4, lr=0.001, restore_path=None):
         self.sess = sess
         self.gamma = gamma
         self.n_actions = n_actions
         self.lr = lr
         self.build_network()
+        self.saver = tf.train.Saver()
+        self.save_path = save_path
+        self.iteration = 0
 
-        tf.initialize_all_variables().run()
+        if restore_path is not None:
+            saver.restore(sess, restore_path)
+        else:
+            tf.initialize_all_variables().run()
 
     # Build Network
     def build_network(self):
@@ -82,7 +88,7 @@ class DQN(object):
         target = self.R + self.gamma * tf.reduce_max(self.Q_n, axis=1)
         pred = tf.reduce_max(tf.multiply(indices, self.Q), axis=1)
 
-        self.loss = tf.square(target - pred)
+        self.loss = tf.reduce_sum(tf.square(target - pred))
 
         self.train_op = tf.train.AdamOptimizer(self.lr).minimize(self.loss)
 
@@ -91,7 +97,7 @@ class DQN(object):
         A   = np.array([b[1] for b in batch])
         R   = np.array([b[2] for b in batch])
         S_n = np.array([b[3] for b in batch])
-        
+
         (loss, op) = self.sess.run([self.loss, self.train_op], feed_dict={
             self.S:   S,
             self.A:   A,
@@ -99,6 +105,9 @@ class DQN(object):
             self.S_n: S_n
         })
         print 'Loss:', loss
+
+        if self.iteration % 100 == 0:
+            self.saver.save(self.sess, self.save_path)
 
     def predict(self, frame):
         pred = self.sess.run(self.pred, feed_dict={self.S: [frame]})
