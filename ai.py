@@ -6,6 +6,7 @@
 # control inputs to the emulator.              #
 ################################################
 
+import os
 import sys
 import numpy as np
 import tensorflow as tf
@@ -68,11 +69,32 @@ class Agent:
             if self.restart_game > 0:
                 self.api.writeGamepad(0, 3, True)
                 self.restart_game -= 1
+                move = -2
             else:
                 if move >= 0:
                     self.api.writeGamepad(0, move, True)
             self.placed_move = True
             self.show_board = True
+
+            piece_id = self.api.peekCPU(0x0042)
+            game_state = self.api.peekCPU(0x0048)
+
+            if self.last_move != -2:
+                S  = self.grid.copy()
+                A  = self.last_move
+                R  = self.__count_total() + self.__get_score()
+                self.__update_board(self.api.peekCPU(0x0042))
+                SP = self.grid.copy()
+
+                self.replay_buffer.add(S.reshape((20, 10, 1)),
+                                       self.possible_moves.index(A),
+                                       R,
+                                       SP.reshape((20, 10, 1)))
+
+                # os.system('clear')
+                print self.epsilon
+                self.__print_transition(S, A, SP)
+
             self.last_move = move
         else:
             self.placed_move = False
@@ -83,7 +105,6 @@ class Agent:
         TODO: do this lazily, so we aren't calling read too often O_o
         """
 
-        (x, y) = (self.api.peekCPU(0x0040), self.api.peekCPU(0x0041))
         piece_id = self.api.peekCPU(0x0042)
         game_state = self.api.peekCPU(0x0048)
 
@@ -97,11 +118,23 @@ class Agent:
         if piece_id == 19 and game_state != 1:
             return
 
+        # Train
+        if self.train and self.replay_buffer.size() > 500:
+            batch = self.replay_buffer.sample(batch_sz=500)
+            self.network.train(batch)
+            self.training_begun = True
+
+            self.epsilon *= self.decay
+            if self.epsilon < 0.015:
+                self.epsilon = 0.015
+
+    def __update_board(self, piece_id):
+        if piece_id == 19:
+            return
+
+        (x, y) = (self.api.peekCPU(0x0040), self.api.peekCPU(0x0041))
         piece = kOrientations[piece_id]
         r, c = np.argwhere(piece == 2)[0]
-
-        # Save the previous state
-        prev_state = np.array(self.grid)
 
         # Generates the board
         for addr in range(0x0400, 0x04c7 + 1):
@@ -114,51 +147,20 @@ class Agent:
                 if rr + y >= 0 and piece[rr + r, cc + c] > 0:
                     self.grid[rr + y, cc + x] = 2
 
-        # A move was detected...
-        if self.last_move != -2 and not self.placed_move:
-            s = None
-            if self.game_restarted:
-                s = np.array(self.start_state)
-                self.game_restarted = False
-            else:
-                s = self.replay_buffer.get_last_state()
-            a = self.possible_moves.index(self.last_move)
-            r = self.__count_total() + self.__get_score()
-            sp = self.grid.reshape((20, 10, 1))
-
-            self.replay_buffer.add(s, a, r, sp)
-
-            if self.train and self.replay_buffer.size() > 500:
-                batch = self.replay_buffer.sample(batch_sz=500)
-                self.network.train(batch)
-                self.training_begun = True
-
-                self.epsilon *= self.decay
-                if self.epsilon < 0.015:
-                    self.epsilon = 0.015
-
-            # self.__print_board()
-            self.__print_transition(s.reshape((20,10)), self.last_move, self.grid)
-
-            self.last_move = -2
-        """
-        if self.verbose or self.show_board:
-            self.__print_board()
-            self.last_move = -2
-            self.show_board = False
-        """
-
-    def __print_board(self):
+    def __print_board(self, board=None, show_info=True):
         """
         Prints the board (if verbose mode is on)
         """
 
-        reward = self.__count_total() + self.__get_score()
-        print 'Render... (a: %s | r: %s | e: %f)' % (self.last_move, reward, self.epsilon)
-        for i in range(self.grid.shape[0]):
-            for j in range(self.grid.shape[1]):
-                val = str(int(self.grid[i,j]))
-                if self.grid[i,j] > 0:
+        board = self.grid if board is None else board
+
+        if show_info:
+            reward = self.__count_total() + self.__get_score()
+            print 'Render... (a: %s | r: %s | e: %f)' % (self.last_move, reward, self.epsilon)
+        for i in range(board.shape[0]):
+            for j in range(board.shape[1]):
+                val = str(int(board[i,j]))
+                if board[i,j] > 0:
                     print bcolors.FAIL + val + bcolors.ENDC,
                 else:
                     print val,
@@ -204,7 +206,7 @@ def main(args):
     api = nintaco.getAPI()
 
     with tf.Session() as sess:
-        agent = Agent(api, sess, save_path='checkpoints/model.ckpt', verbose=False, train=False)
+        agent = Agent(api, sess, save_path='checkpoints/model.ckpt', verbose=False, train=True)
         agent.launch()
 
 if __name__ == "__main__":
