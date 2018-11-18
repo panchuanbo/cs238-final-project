@@ -100,6 +100,9 @@ class Agent:
         piece = kOrientations[piece_id]
         r, c = np.argwhere(piece == 2)[0]
 
+        # Save the previous state
+        prev_state = np.array(self.grid)
+
         # Generates the board
         for addr in range(0x0400, 0x04c7 + 1):
             val = 0 if self.api.peekCPU(addr) >= 0xef else 1
@@ -111,8 +114,8 @@ class Agent:
                 if rr + y >= 0 and piece[rr + r, cc + c] > 0:
                     self.grid[rr + y, cc + x] = 2
 
-
-        if self.last_move != -2:
+        # A move was detected...
+        if self.last_move != -2 and not self.placed_move:
             s = None
             if self.game_restarted:
                 s = np.array(self.start_state)
@@ -134,7 +137,8 @@ class Agent:
                 if self.epsilon < 0.015:
                     self.epsilon = 0.015
 
-            self.__print_board()
+            # self.__print_board()
+            self.__print_transition(s.reshape((20,10)), self.last_move, self.grid)
 
             self.last_move = -2
         """
@@ -160,6 +164,23 @@ class Agent:
                     print val,
             print ''
 
+    def __print_transition(self, prev, action, cur):
+        print 'Transitioning...'
+        act = np.zeros((20, 3)) - 2
+        act[0,1] = action
+        transition = np.hstack((prev, act, cur))
+
+        for i in range(transition.shape[0]):
+            for j in range(transition.shape[1]):
+                val = transition[i,j]
+                if val == -2:
+                    print '*',
+                elif val != 0:
+                    print bcolors.FAIL + str(int(val)) + bcolors.ENDC,
+                else:
+                    print int(val),
+            print ''
+
     def __count_total(self):
         n_T = self.api.peekCPU16(0x03f0)
         n_J = self.api.peekCPU16(0x03f2)
@@ -183,7 +204,7 @@ def main(args):
     api = nintaco.getAPI()
 
     with tf.Session() as sess:
-        agent = Agent(api, sess, save_path='checkpoints/model.ckpt', verbose=False, train=True)
+        agent = Agent(api, sess, save_path='checkpoints/model.ckpt', verbose=False, train=False)
         agent.launch()
 
 if __name__ == "__main__":
