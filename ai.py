@@ -39,6 +39,8 @@ class Agent:
         self.epsilon = 1.
         self.decay = 0.999
 
+        self.prev_states = [self.start_state] * 5
+
     def launch(self):
         """
         Starts the API and sets up the listeners.
@@ -86,10 +88,14 @@ class Agent:
                 R  = self.__count_total() + self.__get_score() - n_empty
                 SP = self.grid.copy()
 
-                self.replay_buffer.add(S.reshape((20, 10, 1)),
+                self.prev_states.insert(0, S)
+
+                self.replay_buffer.add(np.dstack(self.prev_states),
                                        self.possible_moves.index(A),
                                        R,
-                                       SP.reshape((20, 10, 1)))
+                                       np.dstack([SP] + self.prev_states[:5]))
+
+                self.prev_states = self.prev_states[:5]
 
                 # os.system('clear')
                 print self.epsilon
@@ -110,6 +116,7 @@ class Agent:
 
         # Restart the game
         if piece_id == 19 and (game_state == 10 or game_state == 0):
+            self.prev_states = [self.start_state] * 5
             self.game_restarted = True
             self.restart_game = 1
             return

@@ -18,13 +18,13 @@ class DQN(Model):
     # Build Network
     def build_network(self):
         # Placeholders
-        self.S = tf.placeholder(tf.float32, shape=[None, 20, 10, 1])
+        self.S = tf.placeholder(tf.float32, shape=[None, 20, 10, 6])
         self.A = tf.placeholder(tf.int32, shape=[None])
         self.R = tf.placeholder(tf.float32, shape=[None])
-        self.S_n = tf.placeholder(tf.float32, shape=[None, 20, 10, 1])
+        self.S_n = tf.placeholder(tf.float32, shape=[None, 20, 10, 6])
 
         # Weights
-        self.W1 = tf.get_variable("W1", [6, 6, 1, 10])
+        self.W1 = tf.get_variable("W1", [6, 6, 6, 10])
         self.W2 = tf.get_variable("W2", [8, 8, 10, 10])
         self.W3 = tf.get_variable("W3", [2000, 20])
         self.W4 = tf.get_variable("W4", [20, 4])
