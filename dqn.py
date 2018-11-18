@@ -24,17 +24,13 @@ class DQN(Model):
         self.S_n = tf.placeholder(tf.float32, shape=[None, 20, 10, 1])
 
         # Weights
-        self.W1 = tf.get_variable("W1", [4, 4, 1, 5])
-        self.W2 = tf.get_variable("W2", [4, 4, 5, 10])
-        self.W3 = tf.get_variable("W3", [2000, 4])
+        self.W1 = tf.get_variable("W1", [6, 6, 1, 10])
+        self.W2 = tf.get_variable("W2", [8, 8, 10, 10])
+        self.W3 = tf.get_variable("W3", [2000, 20])
+        self.W4 = tf.get_variable("W4", [20, 4])
 
         # Network
-        def gen_network(dat, w1, w2, w3, strides=[1, 1, 1, 1], stop_gradient=False):
-            if stop_gradient:
-                w1 = tf.stop_gradient(w1)
-                w2 = tf.stop_gradient(w2)
-                w3 = tf.stop_gradient(w3)
-
+        def gen_network(dat, w1, w2, w3, w4, strides=[1, 1, 1, 1]):
             a1 = tf.nn.conv2d(dat, w1, strides, padding='SAME')
             z1 = tf.nn.relu(a1)
 
@@ -43,13 +39,17 @@ class DQN(Model):
 
             # Flatten & FCL
             c3 = tf.contrib.layers.flatten(z2)
-            c4 = tf.matmul(c3, w3)
 
-            return c4
+            a4 = tf.matmul(c3, w3)
+            z4 = tf.nn.relu(a4)
+
+            a5 = tf.matmul(z4, w4)
+
+            return a5
 
         # In a DQN, the NN is an estimator for the Q value!
-        self.Q = gen_network(self.S, self.W1, self.W2, self.W3)
-        self.Q_n = gen_network(self.S_n, self.W1, self.W2, self.W3, stop_gradient=True)
+        self.Q = gen_network(self.S, self.W1, self.W2, self.W3, self.W4)
+        self.Q_n = gen_network(self.S_n, self.W1, self.W2, self.W3, self.W4)
 
         # Pred
         self.pred = tf.argmax(self.Q, axis=1)
@@ -59,7 +59,7 @@ class DQN(Model):
         target = self.R + self.gamma * tf.reduce_max(self.Q_n, axis=1)
         pred = tf.reduce_max(tf.multiply(indices, self.Q), axis=1)
 
-        self.loss = tf.reduce_sum(tf.square(target - pred))
+        self.loss = tf.reduce_sum(tf.square(tf.stop_gradient(target) - pred))
 
         self.train_op = tf.train.AdamOptimizer(self.lr).minimize(self.loss)
 

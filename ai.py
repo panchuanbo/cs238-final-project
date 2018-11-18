@@ -82,8 +82,8 @@ class Agent:
             if self.last_move != -2:
                 S  = self.grid.copy()
                 A  = self.last_move
-                R  = self.__count_total() + self.__get_score()
-                self.__update_board(self.api.peekCPU(0x0042))
+                n_empty = self.__update_board(self.api.peekCPU(0x0042))
+                R  = self.__count_total() + self.__get_score() - n_empty
                 SP = self.grid.copy()
 
                 self.replay_buffer.add(S.reshape((20, 10, 1)),
@@ -125,8 +125,8 @@ class Agent:
             self.training_begun = True
 
             self.epsilon *= self.decay
-            if self.epsilon < 0.015:
-                self.epsilon = 0.015
+            if self.epsilon < 0.010:
+                self.epsilon = 0.010
 
     def __update_board(self, piece_id):
         if piece_id == 19:
@@ -141,11 +141,16 @@ class Agent:
             val = 0 if self.api.peekCPU(addr) >= 0xef else 1
             self.grid[(addr - 0x0400) / 10, (addr - 0x0400) % 10] = val
 
+        rows = np.sum(self.grid, axis=1)
+        n_empty = np.count_nonzero(rows) * 10 - np.sum(rows)
+
         # Places the piece
         for cc in range(-c, piece.shape[1] - c):
             for rr in range(-r, piece.shape[0] - r):
                 if rr + y >= 0 and piece[rr + r, cc + c] > 0:
                     self.grid[rr + y, cc + x] = 2
+
+        return n_empty
 
     def __print_board(self, board=None, show_info=True):
         """
