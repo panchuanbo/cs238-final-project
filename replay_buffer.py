@@ -8,7 +8,7 @@ import random
 
 class ReplayBuffer(object):
     def __init__(self, max_size=1000):
-        self.max_size = 1000
+        self.max_size = max_size
         self.buff = []
 
     def add(self, s, a, r, sp):

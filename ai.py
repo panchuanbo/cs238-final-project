@@ -21,7 +21,7 @@ class Agent:
         self.api = api
         self.verbose = verbose
         self.train = train
-        self.replay_buffer = ReplayBuffer()
+        self.replay_buffer = ReplayBuffer(max_size=5000)
         self.network = DQN(sess, save_path, restore_path=restore_path)
 
         self.launched = False
@@ -35,8 +35,8 @@ class Agent:
         self.start_state = np.zeros((20, 10, 1))
         self.possible_moves = [-1, 0, 6, 7]
         self.training_begun = False
-        self.epsilon = 1
-        self.decay = 0.9975
+        self.epsilon = 1.
+        self.decay = 0.999
 
     def launch(self):
         """
@@ -125,12 +125,14 @@ class Agent:
 
             self.replay_buffer.add(s, a, r, sp)
 
-            if self.train and self.replay_buffer.size() > 300:
-                batch = self.replay_buffer.sample(batch_sz=250)
+            if self.train and self.replay_buffer.size() > 500:
+                batch = self.replay_buffer.sample(batch_sz=500)
                 self.network.train(batch)
                 self.training_begun = True
 
                 self.epsilon *= self.decay
+                if self.epsilon < 0.015:
+                    self.epsilon = 0.015
 
             self.__print_board()
 
@@ -148,7 +150,7 @@ class Agent:
         """
 
         reward = self.__count_total() + self.__get_score()
-        print 'Render... (a: %s | r: %s | e: %s)' % (self.last_move, reward, self.epsilon)
+        print 'Render... (a: %s | r: %s | e: %f)' % (self.last_move, reward, self.epsilon)
         for i in range(self.grid.shape[0]):
             for j in range(self.grid.shape[1]):
                 val = str(int(self.grid[i,j]))
