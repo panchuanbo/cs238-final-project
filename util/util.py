@@ -1,5 +1,33 @@
 import numpy as np
 
+# Constants
+class MemAddr:
+    # Piece counts
+    T_Count = 0x03f0
+    J_Count = 0x03f2
+    Z_Count = 0x03f4
+    O_Count = 0x03f6
+    S_Count = 0x03f8
+    L_Count = 0x03fa
+    I_Count = 0x03fc
+
+    # Location
+    X_Loc = 0x0040
+    Y_Loc = 0x0041
+
+    # Board
+    Board_Start = 0x0400
+    Board_End   = 0x04c7
+
+    # Score
+    Score_Low = 0x0073
+    Score_Mid = 0x0074
+    Score_Hig = 0x0075
+
+class Const:
+    Board_Width  = 10
+    Board_Height = 20
+
 # Piece Orientations
 kOrientations = {
     0x00: np.array([

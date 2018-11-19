@@ -12,7 +12,7 @@ import numpy as np
 
 from nintaco import nintaco
 
-from util.util import bcolors, kOrientations
+from util.util import bcolors, kOrientations, MemAddr, Const
 
 class Agent(object):
     """
@@ -26,7 +26,7 @@ class Agent(object):
         self.verbose = verbose
 
         self.launched = False
-        self.grid = np.zeros((20, 10))
+        self.grid = np.zeros((Const.Board_Height, Const.Board_Width))
 
     def launch(self):
         """
@@ -73,13 +73,13 @@ class Agent(object):
         Counts the total number of pieces.
         """
 
-        n_T = self.api.peekCPU16(0x03f0)
-        n_J = self.api.peekCPU16(0x03f2)
-        n_Z = self.api.peekCPU16(0x03f4)
-        n_O = self.api.peekCPU16(0x03f6)
-        n_S = self.api.peekCPU16(0x03f8)
-        n_L = self.api.peekCPU16(0x03fa)
-        n_I = self.api.peekCPU16(0x03fc)
+        n_T = self.api.peekCPU16(MemAddr.T_Count)
+        n_J = self.api.peekCPU16(MemAddr.J_Count)
+        n_Z = self.api.peekCPU16(MemAddr.Z_Count)
+        n_O = self.api.peekCPU16(MemAddr.O_Count)
+        n_S = self.api.peekCPU16(MemAddr.S_Count)
+        n_L = self.api.peekCPU16(MemAddr.L_Count)
+        n_I = self.api.peekCPU16(MemAddr.I_Count)
 
         return n_T + n_J + n_Z + n_O + n_S + n_L + n_I
 
@@ -90,9 +90,9 @@ class Agent(object):
         to be reconstructed.
         """
 
-        low = self.api.peekCPU(0x0073)
-        mid = self.api.peekCPU(0x0074)
-        hig = self.api.peekCPU(0x0075)
+        low = self.api.peekCPU(MemAddr.Score_Low)
+        mid = self.api.peekCPU(MemAddr.Score_Mid)
+        hig = self.api.peekCPU(MemAddr.Score_Hig)
 
         return hig * 10000 + mid * 100 + low
 
@@ -104,7 +104,7 @@ class Agent(object):
         pieces from fitting in, but it acts as a proxy for good board positioning.
         """
 
-        visit = [(0, i) for i in range(10) if board[0,i] == 0]
+        visit = [(0, i) for i in range(Const.Board_Width) if board[0,i] == 0]
         viewed = set(visit)
 
         while len(visit) > 0:
@@ -129,14 +129,14 @@ class Agent(object):
         if piece_id == 19:
             return
 
-        (x, y) = (self.api.peekCPU(0x0040), self.api.peekCPU(0x0041))
+        (x, y) = (self.api.peekCPU(MemAddr.X_Loc), self.api.peekCPU(MemAddr.Y_Loc))
         piece = kOrientations[piece_id]
         r, c = np.argwhere(piece == 2)[0]
 
         # Generates the board
-        for addr in range(0x0400, 0x04c7 + 1):
+        for addr in range(MemAddr.Board_Start, MemAddr.Board_End + 1):
             val = 0 if self.api.peekCPU(addr) >= 0xef else 1
-            self.grid[(addr - 0x0400) / 10, (addr - 0x0400) % 10] = val
+            self.grid[(addr - MemAddr.Board_End) / 10, (addr - MemAddr.Board_Start) % 10] = val
 
         # Places the piece
         for cc in range(-c, piece.shape[1] - c):
@@ -148,7 +148,7 @@ class Agent(object):
         rows = np.sum(self.grid, axis=1).reshape(20)
         h_arr = [i for i in range(20) if rows[i] == 0]
         h_arr = [-1] if len(h_arr) == 0 else h_arr
-        height = (20 - h_arr[-1]) - 1
+        height = (Const.Board_Height - h_arr[-1]) - 1
 
 
         rows = np.sum(self.grid, axis=1)
