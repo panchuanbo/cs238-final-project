@@ -1,11 +1,3 @@
-################################################
-# Starting point for the Tetris AI.            #
-# This part of the program interfaces directly #
-# with the emulator. It should get the state   #
-# of the board, current score (rewards), and   #
-# control inputs to the emulator.              #
-################################################
-
 import os
 import sys
 import numpy as np
@@ -13,20 +5,23 @@ import tensorflow as tf
 
 from nintaco import nintaco
 
+from agent import Agent
 from dqn import DQN
 from replay_buffer import ReplayBuffer
 from util import bcolors, kOrientations
 
-class Agent:
-    def __init__(self, api, sess, save_path, restore_path=None, verbose=False, train=False):
-        self.api = api
-        self.verbose = verbose
-        self.train = train
-        self.replay_buffer = ReplayBuffer(max_size=5000)
-        self.network = DQN(sess, save_path, restore_path=restore_path)
+class NeuralNetworkAgent(Agent):
+    def __init__(self, api, network_class, sess, save_path, history_size=5, restore_path=None, verbose=False, train=False):
+        super(NeuralNetworkAgent, self).__init__(api, verbose=verbose)
 
+        # Network
+        self.network = network_class(sess, save_path, restore_path=restore_path)
+        self.replay_buffer = ReplayBuffer(max_size=7500)
+        self.train = train
+        self.history_size = history_size
+
+        # Internal
         self.launched = False
-        self.grid = np.zeros((20, 10))
         self.placed_move = False
         self.ctr = 0
         self.restart_game = 1
@@ -39,33 +34,20 @@ class Agent:
         self.epsilon = 1.
         self.decay = 0.999
 
-        self.prev_states = [self.start_state] * 5
+        self.prev_states = [self.start_state] * self.history_size
 
-    def launch(self):
-        """
-        Starts the API and sets up the listeners.
-        Throws an exception if this is called while the API is
-        already running.
-        """
-
-        if not self.launched:
-            self.api.addActivateListener(self.__api_enabled)
-            self.api.addFrameListener(self.__frame_render_finished)
-            self.api.addControllersListener(self.__controller_listener)
-            self.api.run()
-        else:
-            raise ValueError("Agent already running.")
-
-    def __api_enabled(self):
-        print '[Agent] API Enabled'
-
-    def __controller_listener(self):
+    def _controller_listener(self):
         if not self.placed_move:# and (random_move >= 0 or self.restart_game > 0):
+            # os.system('clear')
+            print '--------------'
+            is_random = False
             move = None
             if np.random.random() < self.epsilon or not self.training_begun:
                 move = np.random.choice(self.possible_moves)
+                is_random = True
             else:
-                pred = self.network.predict(self.grid.reshape((20, 10, 1)))[0]
+                tensor = np.dstack([self.grid] + self.prev_states)
+                pred = self.network.predict(tensor)[0]
                 move = self.possible_moves[pred]
 
             if self.restart_game > 0:
@@ -81,31 +63,34 @@ class Agent:
             piece_id = self.api.peekCPU(0x0042)
             game_state = self.api.peekCPU(0x0048)
 
-            if self.last_move != -2:
+            if self.last_move != -2 and piece_id != 19:
+                print 'Random:', is_random
                 S  = self.grid.copy()
                 A  = self.last_move
-                n_empty = self.__update_board(self.api.peekCPU(0x0042))
-                R  = self.__count_total() + self.__get_score() - n_empty
+                (n_holes, n_empty, height) = self._update_board(self.api.peekCPU(0x0042))
+                # R  = self._count_total() + self._get_score() - n_empty
+                R = (-50 * height) + (-20 * n_holes) + (self._get_score())
                 SP = self.grid.copy()
 
                 self.prev_states.insert(0, S)
 
+                print np.dstack(self.prev_states).shape
+
                 self.replay_buffer.add(np.dstack(self.prev_states),
                                        self.possible_moves.index(A),
                                        R,
-                                       np.dstack([SP] + self.prev_states[:5]))
+                                       np.dstack([SP] + self.prev_states[:self.history_size]))
 
-                self.prev_states = self.prev_states[:5]
+                self.prev_states = self.prev_states[:self.history_size]
 
-                # os.system('clear')
                 print self.epsilon
-                self.__print_transition(S, A, SP)
+                self._print_transition(S, A, SP, R)
 
             self.last_move = move
         else:
             self.placed_move = False
 
-    def __frame_render_finished(self):
+    def _frame_render_finished(self):
         """
         Renders the board the the current piece
         TODO: do this lazily, so we aren't calling read too often O_o
@@ -116,7 +101,7 @@ class Agent:
 
         # Restart the game
         if piece_id == 19 and (game_state == 10 or game_state == 0):
-            self.prev_states = [self.start_state] * 5
+            self.prev_states = [self.start_state] * self.history_size
             self.game_restarted = True
             self.restart_game = 1
             return
@@ -126,8 +111,8 @@ class Agent:
             return
 
         # Train
-        if self.train and self.replay_buffer.size() > 500:
-            batch = self.replay_buffer.sample(batch_sz=500)
+        if self.train and self.replay_buffer.size() > 1000:
+            batch = self.replay_buffer.sample(batch_sz=1000)
             self.network.train(batch)
             self.training_begun = True
 
@@ -135,90 +120,15 @@ class Agent:
             if self.epsilon < 0.010:
                 self.epsilon = 0.010
 
-    def __update_board(self, piece_id):
-        if piece_id == 19:
-            return
-
-        (x, y) = (self.api.peekCPU(0x0040), self.api.peekCPU(0x0041))
-        piece = kOrientations[piece_id]
-        r, c = np.argwhere(piece == 2)[0]
-
-        # Generates the board
-        for addr in range(0x0400, 0x04c7 + 1):
-            val = 0 if self.api.peekCPU(addr) >= 0xef else 1
-            self.grid[(addr - 0x0400) / 10, (addr - 0x0400) % 10] = val
-
-        rows = np.sum(self.grid, axis=1)
-        n_empty = np.count_nonzero(rows) * 10 - np.sum(rows)
-
-        # Places the piece
-        for cc in range(-c, piece.shape[1] - c):
-            for rr in range(-r, piece.shape[0] - r):
-                if rr + y >= 0 and piece[rr + r, cc + c] > 0:
-                    self.grid[rr + y, cc + x] = 2
-
-        return n_empty
-
-    def __print_board(self, board=None, show_info=True):
-        """
-        Prints the board (if verbose mode is on)
-        """
-
-        board = self.grid if board is None else board
-
-        if show_info:
-            reward = self.__count_total() + self.__get_score()
-            print 'Render... (a: %s | r: %s | e: %f)' % (self.last_move, reward, self.epsilon)
-        for i in range(board.shape[0]):
-            for j in range(board.shape[1]):
-                val = str(int(board[i,j]))
-                if board[i,j] > 0:
-                    print bcolors.FAIL + val + bcolors.ENDC,
-                else:
-                    print val,
-            print ''
-
-    def __print_transition(self, prev, action, cur):
-        print 'Transitioning...'
-        act = np.zeros((20, 3)) - 2
-        act[0,1] = action
-        transition = np.hstack((prev, act, cur))
-
-        for i in range(transition.shape[0]):
-            for j in range(transition.shape[1]):
-                val = transition[i,j]
-                if val == -2:
-                    print '*',
-                elif val != 0:
-                    print bcolors.FAIL + str(int(val)) + bcolors.ENDC,
-                else:
-                    print int(val),
-            print ''
-
-    def __count_total(self):
-        n_T = self.api.peekCPU16(0x03f0)
-        n_J = self.api.peekCPU16(0x03f2)
-        n_Z = self.api.peekCPU16(0x03f4)
-        n_O = self.api.peekCPU16(0x03f6)
-        n_S = self.api.peekCPU16(0x03f8)
-        n_L = self.api.peekCPU16(0x03fa)
-        n_I = self.api.peekCPU16(0x03fc)
-
-        return n_T + n_J + n_Z + n_O + n_S + n_L + n_I
-
-    def __get_score(self):
-        low = self.api.peekCPU(0x0073)
-        mid = self.api.peekCPU(0x0074)
-        hig = self.api.peekCPU(0x0075)
-
-        return hig * 10000 + mid * 100 + low
+    def agent_name(self):
+        return 'NeuralNetworkAgent'
 
 def main(args):
     nintaco.initRemoteAPI("localhost", 9999)
     api = nintaco.getAPI()
 
     with tf.Session() as sess:
-        agent = Agent(api, sess, save_path='checkpoints/model.ckpt', verbose=False, train=True)
+        agent = NeuralNetworkAgent(api, DQN, sess, save_path='checkpoints/model.ckpt', verbose=False, train=True)
         agent.launch()
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ import tensorflow as tf
 from model import Model
 
 class DQN(Model):
-    def __init__(self, sess, save_path, gamma=0.995, n_actions=4, lr=0.001, restore_path=None):
+    def __init__(self, sess, save_path, gamma=0.9999, n_actions=4, lr=0.0001, restore_path=None):
         self.gamma = gamma
         self.n_actions = n_actions
         self.iteration = 0
@@ -24,24 +24,25 @@ class DQN(Model):
         self.S_n = tf.placeholder(tf.float32, shape=[None, 20, 10, 6])
 
         # Weights
-        self.W1 = tf.get_variable("W1", [6, 6, 6, 10])
-        self.W2 = tf.get_variable("W2", [8, 8, 10, 10])
-        self.W3 = tf.get_variable("W3", [2000, 20])
-        self.W4 = tf.get_variable("W4", [20, 4])
+        initializer = tf.contrib.layers.xavier_initializer()
+        self.W1 = tf.get_variable("W1", [4, 4, 6, 10], initializer=initializer)
+        self.W2 = tf.get_variable("W2", [8, 8, 10, 10], initializer=initializer)
+        self.W3 = tf.get_variable("W3", [2000, 20], initializer=initializer)
+        self.W4 = tf.get_variable("W4", [20, 4], initializer=initializer)
 
         # Network
         def gen_network(dat, w1, w2, w3, w4, strides=[1, 1, 1, 1]):
             a1 = tf.nn.conv2d(dat, w1, strides, padding='SAME')
-            z1 = tf.nn.relu(a1)
+            z1 = tf.nn.elu(a1)
 
             a2 = tf.nn.conv2d(z1, w2, strides, padding='SAME')
-            z2 = tf.nn.relu(a2)
+            z2 = tf.nn.elu(a2)
 
             # Flatten & FCL
             c3 = tf.contrib.layers.flatten(z2)
 
             a4 = tf.matmul(c3, w3)
-            z4 = tf.nn.relu(a4)
+            z4 = tf.nn.elu(a4)
 
             a5 = tf.matmul(z4, w4)
 
@@ -54,14 +55,18 @@ class DQN(Model):
         # Pred
         self.pred = tf.argmax(self.Q, axis=1)
 
-        # Optimizer
+        # Target and Pred Q Values
         indices = tf.one_hot(self.A, self.n_actions)
-        target = self.R + self.gamma * tf.reduce_max(self.Q_n, axis=1)
-        pred = tf.reduce_max(tf.multiply(indices, self.Q), axis=1)
+        self.target = self.R + self.gamma * tf.reduce_max(self.Q_n, axis=1)
+        q_pred = tf.reduce_max(tf.multiply(indices, self.Q), axis=1)
 
-        self.loss = tf.reduce_sum(tf.square(tf.stop_gradient(target) - pred))
+        # Optimizer (w/ Clipping)
+        self.loss = tf.reduce_sum(tf.square(tf.stop_gradient(self.target) - q_pred))
 
-        self.train_op = tf.train.AdamOptimizer(self.lr).minimize(self.loss)
+        optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
+        gvs = optimizer.compute_gradients(self.loss)
+        capped_gvs = [(tf.clip_by_value(grad, -1., 1.), var) for grad, var in gvs]
+        self.train_op = optimizer.apply_gradients(capped_gvs)
 
     def train(self, batch):
         S   = np.array([b[0] for b in batch])
@@ -77,10 +82,11 @@ class DQN(Model):
         })
         print 'Loss:', loss
 
-        if self.iteration % 100 == 0:
+        if self.iteration % 500 == 0:
             self.saver.save(self.sess, self.save_path)
 
     def predict(self, frame):
-        pred = self.sess.run(self.pred, feed_dict={self.S: [frame]})
+        (pred, Q) = self.sess.run([self.pred, self.Q], feed_dict={self.S: [frame]})
 
+        print (pred, Q)
         return pred
