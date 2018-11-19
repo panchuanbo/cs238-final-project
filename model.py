@@ -19,7 +19,7 @@ class Model(object):
         if restore_path is not None:
             self.saver.restore(sess, restore_path)
         else:
-            tf.initialize_all_variables().run()
+            tf.global_variables_initializer().run()
 
     def build_network(self):
         raise NotImplementedError("build_network must be implemented in the subclass")

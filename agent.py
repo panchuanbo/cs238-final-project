@@ -186,8 +186,10 @@ class Agent(object):
     ### MARK: - Controller Metatdata ###
 
     def _api_enabled(self):
+        print '------------------------'
         print '[%s] API Enabled' % (self.agent_name())
         self.display_agent_description()
+        print '------------------------'
 
     def agent_name(self):
         raise NotImplementedError('Needs to be implemented in subclass')
