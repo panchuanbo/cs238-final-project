@@ -5,7 +5,7 @@
 import numpy as np
 import tensorflow as tf
 
-from model import Model
+from base.model import Model
 
 class DQN(Model):
     def __init__(self, sess, save_path, gamma=0.9999, n_actions=4, lr=0.0001, restore_path=None):

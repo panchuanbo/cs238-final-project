@@ -5,10 +5,10 @@ import tensorflow as tf
 
 from nintaco import nintaco
 
-from agent import Agent
+from base.agent import Agent
 from dqn import DQN
-from replay_buffer import ReplayBuffer
-from util import bcolors, kOrientations
+from util.replay_buffer import ReplayBuffer
+from util.util import bcolors, kOrientations
 
 class NeuralNetworkAgent(Agent):
     def __init__(self, api, network_class, sess, save_path, history_size=5, restore_path=None, verbose=False, train=False):

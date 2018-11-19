@@ -12,7 +12,7 @@ import numpy as np
 
 from nintaco import nintaco
 
-from util import bcolors, kOrientations
+from util.util import bcolors, kOrientations
 
 class Agent(object):
     """
