@@ -96,6 +96,9 @@ class NeuralNetworkAgent(Agent):
         TODO: do this lazily, so we aren't calling read too often O_o
         """
 
+        # Always drop a certain type of block
+        self.api.writeCPU(0x00bf, 0x0a)
+
         piece_id = self.api.peekCPU(0x0042)
         game_state = self.api.peekCPU(0x0048)
 
