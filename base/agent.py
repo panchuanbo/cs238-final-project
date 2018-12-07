@@ -34,10 +34,12 @@ class Agent(object):
         Throws an exception if this is called while the API is
         already running.
         """
+
         if not self.launched:
             self.api.addActivateListener(self._api_enabled)
             self.api.addFrameListener(self._frame_render_finished)
             self.api.addControllersListener(self._controller_listener)
+            self.api.addAccessPointListener(self._piece_update, nintaco.PreWrite, 0x0042)
             self.api.run()
         else:
             raise Exception("Agent already running.")
@@ -49,6 +51,9 @@ class Agent(object):
 
     def _controller_listener(self):
         raise NotImplementedError('Needs to be implemented in subclass')
+
+    def _piece_update(self, access_type, address, value):
+        return value
 
     ### MARK: - Helper Methods ###
 
@@ -119,6 +124,54 @@ class Agent(object):
 
         return board.shape[0] * board.shape[1] - (np.count_nonzero(board) + len(viewed))
 
+    def _determine_levelness(self, board):
+        board[board == 2] = 1
+        levelness = np.sum(board, axis=0)
+
+        diff = 0
+        prev = levelness[0]
+        for i in range(1, Const.Board_Width):
+            diff += np.abs(prev - levelness[i]) ** 2
+            prev = levelness[i]
+
+        return -diff
+
+    def _simulate_piece_drop(self, piece_id):
+        """
+        Simulates taking a piece and dropping it completely given the
+        current state of the board.
+        """
+        if piece_id == 19:
+            return None
+
+        (x, y) = (self.api.peekCPU(MemAddr.X_Loc), self.api.peekCPU(MemAddr.Y_Loc))
+        piece = kOrientations[piece_id]
+        r, c = np.argwhere(piece == 2)[0]
+
+        board = np.array(self.grid)
+        board[board == 2] = 0
+
+        last_valid_location = y
+        for i in range(y, 20):
+            placed_correctly = True
+            if i + piece.shape[0] > 20: break
+            for cc in range(-c, piece.shape[1] - c):
+                for rr in range(-r, piece.shape[0] - r):
+                    if rr + i >= 0 and piece[rr + r, cc + c] > 0:
+                        if board[rr + i, cc + x] == 1:
+                            placed_correctly = False
+            if placed_correctly:
+                last_valid_location = i
+            else:
+                break
+
+        for cc in range(-c, piece.shape[1] - c):
+            for rr in range(-r, piece.shape[0] - r):
+                if rr + last_valid_location >= 0 and piece[rr + r, cc + c] > 0:
+                    board[rr + last_valid_location, cc + x] = 2
+
+        return board
+
     def _update_board(self, piece_id):
         """
         Updates the board and places the current piece onto it.
@@ -144,19 +197,26 @@ class Agent(object):
                 if rr + y >= 0 and piece[rr + r, cc + c] > 0:
                     self.grid[rr + y, cc + x] = 2
 
-        # Computes Height
-        rows = np.sum(self.grid, axis=1).reshape(20)
-        h_arr = [i for i in range(20) if rows[i] == 0]
-        h_arr = [-1] if len(h_arr) == 0 else h_arr
-        height = (Const.Board_Height - h_arr[-1]) - 1
-
-
-        rows = np.sum(self.grid, axis=1)
+    def _count_empty(self, board):
+        rows = np.sum(board, axis=1)
         n_empty = np.count_nonzero(rows) * 10 - np.sum(rows)
 
-        n_holes = self._count_holes(self.grid)
+        return n_empty
 
-        return (n_holes, n_empty, height)
+
+    def _count_height(self, board, height_drop_piece=False):
+        # Computes Height
+        rows = np.sum(board, axis=1).reshape(20)
+        if height_drop_piece:
+            h_arr = [i for i in range(20) if rows[i] > 0]
+            h_arr = [-1] if len(h_arr) == 0 else h_arr
+            height = (Const.Board_Height - h_arr[0])
+        else:
+            h_arr = [i for i in range(20) if rows[i] == 0]
+            h_arr = [-1] if len(h_arr) == 0 else h_arr
+            height = (Const.Board_Height - h_arr[-1]) - 1
+
+        return height
 
     def _print_transition(self, prev, action, cur, r):
         """
