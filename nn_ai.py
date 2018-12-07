@@ -11,13 +11,13 @@ from util.replay_buffer import ReplayBuffer
 from util.util import bcolors, kOrientations
 
 class NeuralNetworkAgent(Agent):
-    def __init__(self, api, network_class, sess, save_path, history_size=5, restore_path=None, verbose=False, train=False, test=False):
+    def __init__(self, api, network_class, sess, save_path, history_size=15, restore_path=None, verbose=False, train=False, test=False):
         super(NeuralNetworkAgent, self).__init__(api, verbose=verbose)
 
         # currently 7500 w/ 1000
 
         # Network
-        self.network = network_class(sess, save_path, restore_path=restore_path)
+        self.network = network_class(sess, save_path, restore_path=restore_path, hist_size=history_size)
         self.replay_buffer = ReplayBuffer(max_size=2500)
         self.train = train
         self.history_size = history_size

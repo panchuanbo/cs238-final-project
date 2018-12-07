@@ -8,30 +8,31 @@ import tensorflow as tf
 from base.model import Model
 
 class DQN(Model):
-    def __init__(self, sess, save_path, use_target=True, gamma=0.9999, n_actions=4, lr=0.0001, restore_path=None):
+    def __init__(self, sess, save_path, use_target=True, gamma=0.9999, n_actions=4, lr=0.0001, restore_path=None, hist_size=5):
         self.gamma = gamma
         self.n_actions = n_actions
         self.iteration = 0
         self.use_target = use_target
+        self.hist_size = hist_size
 
         super(DQN, self).__init__(sess, save_path, lr=lr, restore_path=restore_path)
 
     def __create_placeholders(self):
-        self.S = tf.placeholder(tf.float32, shape=[None, 20, 10, 6])
+        self.S = tf.placeholder(tf.float32, shape=[None, 20, 10, self.hist_size+1])
         self.A = tf.placeholder(tf.int32, shape=[None])
         self.R = tf.placeholder(tf.float32, shape=[None])
-        self.S_n = tf.placeholder(tf.float32, shape=[None, 20, 10, 6])
+        self.S_n = tf.placeholder(tf.float32, shape=[None, 20, 10, self.hist_size+1])
 
     def __create_weights(self):
         # Weights
         initializer = tf.contrib.layers.xavier_initializer()
-        self.W1 = tf.get_variable("W1", [4, 4, 6, 10], initializer=initializer)
+        self.W1 = tf.get_variable("W1", [4, 4, self.hist_size+1, 10], initializer=initializer)
         self.W2 = tf.get_variable("W2", [8, 8, 10, 10], initializer=initializer)
         self.W3 = tf.get_variable("W3", [2000, 20], initializer=initializer)
         self.W4 = tf.get_variable("W4", [20, 4], initializer=initializer)
 
         # Target Weights
-        self.T_W1 = tf.get_variable("T_W1", [4, 4, 6, 10], initializer=initializer)
+        self.T_W1 = tf.get_variable("T_W1", [4, 4, self.hist_size+1, 10], initializer=initializer)
         self.T_W2 = tf.get_variable("T_W2", [8, 8, 10, 10], initializer=initializer)
         self.T_W3 = tf.get_variable("T_W3", [2000, 20], initializer=initializer)
         self.T_W4 = tf.get_variable("T_W4", [20, 4], initializer=initializer)
