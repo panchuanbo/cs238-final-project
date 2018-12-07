@@ -127,13 +127,20 @@ class Agent(object):
 
     def _determine_levelness(self, board):
         board[board == 2] = 1
-        levelness = np.sum(board, axis=0)
 
         diff = 0
-        prev = levelness[0]
-        for i in range(1, Const.Board_Width):
-            diff += np.abs(prev - levelness[i]) ** 2
-            prev = levelness[i]
+        prev = None
+        for i in range(0, Const.Board_Width):
+            cur = None
+            for j in range(0, Const.Board_Height):
+                if board[j][i] == 1:
+                    cur = Const.Board_Height - j
+                    break
+            if cur is None:
+                cur = 0
+            if prev is not None:
+                diff = np.abs(prev - cur) ** 2
+            prev = cur
 
         return -diff
 
