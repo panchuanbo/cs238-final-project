@@ -123,9 +123,21 @@ class Agent(object):
                             visit.append((i + di, j + dj))
                             viewed.add((i + di, j + dj))
 
-        return board.shape[0] * board.shape[1] - (np.count_nonzero(board) + len(viewed))
+        for j in range(Const.Board_Width):
+            for i in range(Const.Board_Height):
+                if board[i, j] == 1:
+                    viewed.add((i, j))
 
-    def _determine_levelness(self, board):
+        return board.shape[0] * board.shape[1] - len(viewed)
+
+    def _determine_levelness(self, board, count_down=True):
+        """
+        Determines how 'level' the board is by seeing board height
+        - Counting down determines levelness by counting from the top of the
+          board until reaches a piece.
+        - Counting up (count_down=False) determines levelness by counting from
+          the bottom of the board and counting until it reaches an empty space.
+        """
         board[board == 2] = 1
 
         diff = 0
@@ -133,8 +145,11 @@ class Agent(object):
         for i in range(0, Const.Board_Width):
             cur = None
             for j in range(0, Const.Board_Height):
-                if board[j][i] == 1:
+                if count_down and board[j][i] == 1:
                     cur = Const.Board_Height - j
+                    break
+                elif not count_down and board[Const.Board_Height - j - 1][i] == 0:
+                    cur = j
                     break
             if cur is None:
                 cur = 0
@@ -142,24 +157,28 @@ class Agent(object):
                 diff = np.abs(prev - cur) ** 2
             prev = cur
 
-        return -diff
-
+        return diff
 
     def _get_piece_data_for_action(self, piece_id, x, y, action):
+        """
+        This would be the 'transition function'. Given a piece and an action,
+        get the next piece and next action.
+        """
         if action == -1:
             return (piece_id, x, y)
         if action == 6:
-            return (piece_id, x, y-1 if y-1 >= 0 else y)
+            return (piece_id, x-1 if x-1 >= 0 else x, y)
         if action == 7:
-            return (piece_id, x, y+1 if y+1 < Const.Board_Width else y)
+            return (piece_id, x+1 if x+1 < Const.Board_Width else x, y)
         if action == 0:
-            return (kRotationTransitions[piece], x, y)
+            return (kRotationTransitions[piece_id], x, y)
 
     def _place_piece_on_board(self, board, piece_id, x, y):
         """
         Returns a copy of the board but with something on it
         """
         board = np.array(board)
+        board[board == 2] = 0
         piece = kOrientations[piece_id]
         r, c = np.argwhere(piece == 2)[0]
 
@@ -168,12 +187,11 @@ class Agent(object):
                 if rr + y >= 0 and piece[rr + r, cc + c] > 0:
                     if cc + x < 0 or cc + x >= Const.Board_Width: return None
                     if rr + y >= Const.Board_Height: return None
-                    if board[rr + y, cc + x] > 0: return None
                     board[rr + y, cc + x] = 2
 
         return board
 
-    def _simulate_piece_drop(self, piece_id):
+    def _simulate_piece_drop(self, piece_id, use_board=None, x=None, y=None):
         """
         Simulates taking a piece and dropping it completely given the
         current state of the board.
@@ -181,21 +199,24 @@ class Agent(object):
         if piece_id == 19:
             return None
 
-        (x, y) = (self.api.peekCPU(MemAddr.X_Loc), self.api.peekCPU(MemAddr.Y_Loc))
+        if x is None or y is None:
+            (x, y) = (self.api.peekCPU(MemAddr.X_Loc), self.api.peekCPU(MemAddr.Y_Loc))
         piece = kOrientations[piece_id]
         r, c = np.argwhere(piece == 2)[0]
 
-        board = np.array(self.grid)
+        board = np.array(self.grid) if use_board is None else use_board
         board[board == 2] = 0
 
         last_valid_location = y
         for i in range(y, 20):
             placed_correctly = True
-            if i + piece.shape[0] > 20: break
+            # if i + piece.shape[0] >= 20: break
             for cc in range(-c, piece.shape[1] - c):
                 for rr in range(-r, piece.shape[0] - r):
                     if rr + i >= 0 and piece[rr + r, cc + c] > 0:
-                        if board[rr + i, cc + x] == 1:
+                        if (rr + i >= Const.Board_Height or
+                            cc + x >= Const.Board_Width or
+                            board[rr + i, cc + x] == 1):
                             placed_correctly = False
             if placed_correctly:
                 last_valid_location = i
@@ -231,11 +252,37 @@ class Agent(object):
         self.grid = self._place_piece_on_board(self.grid, piece_id, x, y)
 
     def _count_empty(self, board):
+        """
+        Counts the number of empty rows/cols
+        """
         rows = np.sum(board, axis=1)
         n_empty = np.count_nonzero(rows) * 10 - np.sum(rows)
 
         return n_empty
 
+    def _count_row_non_fill(self, board):
+        """
+        We define the `row nonfill` as how many empty spaces there are in a row
+        For example, let x = filled and o = empty, then if we have: ooxxxoooox,
+        then the row non_fill is 7. We penalize row non-fill for higher rows.
+        """
+        b = np.array(board)
+        b[b == 2] = 1
+        penalty = Const.Board_Width - np.sum(b, axis=1)
+
+        return np.sum([penalty[i] * (Const.Board_Height - i) for i in range(Const.Board_Height)])
+
+    def _count_filled_line(self, board):
+        """
+        Counts the number of filled rows
+        """
+        b = np.array(board)
+        b[b == 2] = 1
+        filled = np.sum(b, axis=1)
+        filled[filled == Const.Board_Width] = 100
+        filled[filled < 100] = 0
+
+        return np.sum(filled)
 
     def _count_height(self, board, height_drop_piece=False):
         # Computes Height
