@@ -12,6 +12,7 @@ import numpy as np
 
 from nintaco import nintaco
 
+from util.util import kOrientations, kRotationTransitions
 from util.util import bcolors, kOrientations, MemAddr, Const
 
 class Agent(object):
@@ -136,6 +137,35 @@ class Agent(object):
 
         return -diff
 
+
+    def _get_piece_data_for_action(self, piece_id, x, y, action):
+        if action == -1:
+            return (piece_id, x, y)
+        if action == 6:
+            return (piece_id, x, y-1 if y-1 >= 0 else y)
+        if action == 7:
+            return (piece_id, x, y+1 if y+1 < Const.Board_Width else y)
+        if action == 0:
+            return (kRotationTransitions[piece], x, y)
+
+    def _place_piece_on_board(self, board, piece_id, x, y):
+        """
+        Returns a copy of the board but with something on it
+        """
+        board = np.array(board)
+        piece = kOrientations[piece_id]
+        r, c = np.argwhere(piece == 2)[0]
+
+        for cc in range(-c, piece.shape[1] - c):
+            for rr in range(-r, piece.shape[0] - r):
+                if rr + y >= 0 and piece[rr + r, cc + c] > 0:
+                    if cc + x < 0 or cc + x >= Const.Board_Width: return None
+                    if rr + y >= Const.Board_Height: return None
+                    if board[rr + y, cc + x] > 0: return None
+                    board[rr + y, cc + x] = 2
+
+        return board
+
     def _simulate_piece_drop(self, piece_id):
         """
         Simulates taking a piece and dropping it completely given the
@@ -184,7 +214,6 @@ class Agent(object):
 
         (x, y) = (self.api.peekCPU(MemAddr.X_Loc), self.api.peekCPU(MemAddr.Y_Loc))
         piece = kOrientations[piece_id]
-        r, c = np.argwhere(piece == 2)[0]
 
         # Generates the board
         for addr in range(MemAddr.Board_Start, MemAddr.Board_End + 1):
@@ -192,10 +221,7 @@ class Agent(object):
             self.grid[(addr - MemAddr.Board_End) / 10, (addr - MemAddr.Board_Start) % 10] = val
 
         # Places the piece
-        for cc in range(-c, piece.shape[1] - c):
-            for rr in range(-r, piece.shape[0] - r):
-                if rr + y >= 0 and piece[rr + r, cc + c] > 0:
-                    self.grid[rr + y, cc + x] = 2
+        self.grid = self._place_piece_on_board(self.grid, piece_id, x, y)
 
     def _count_empty(self, board):
         rows = np.sum(board, axis=1)
